@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, onSnapshot, addDoc, setDoc, deleteDoc, getDocs, writeBatch, query, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { ShoppingCart, Trash2, Package, ArrowLeft, PlusCircle, Edit, Banknote, Upload, X, CheckCircle, Truck, Star, Eye, EyeOff, Search as SearchIcon } from 'lucide-react';
+import { ShoppingCart, Trash2, Package, ArrowLeft, PlusCircle, Edit, Banknote, Upload, X, CheckCircle, Truck, Star, Eye, EyeOff, Mail, Tag } from 'lucide-react';
 import * as Tone from 'tone';
 
 // --- Configuración de Firebase ---
@@ -34,7 +34,51 @@ const MOCK_REVIEWS = [
     { name: 'Jorge L.', rating: 4, comment: 'Buen producto, cumple con lo especificado.' },
 ];
 
-// --- Componentes de la UI ---
+// --- Función de Utilidad para Imágenes ---
+const resizeImage = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > MAX_WIDTH) {
+                    height *= MAX_WIDTH / width;
+                    width = MAX_WIDTH;
+                }
+            } else {
+                if (height > MAX_HEIGHT) {
+                    width *= MAX_HEIGHT / height;
+                    height = MAX_HEIGHT;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+        };
+        img.onerror = (error) => reject(error);
+    };
+    reader.onerror = (error) => reject(error);
+});
+
+
+// --- Componentes de la UI (Definidos antes de App) ---
+
+const Spinner = () => (
+    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+);
 
 const ThunderIcon = () => (
     <div className="w-9 h-9 mr-3 flex items-center justify-center bg-indigo-600 dark:bg-indigo-500 rounded-full shadow-md">
@@ -42,11 +86,30 @@ const ThunderIcon = () => (
     </div>
 );
 
+const ThunderEffect = ({ active, position }) => {
+    if (!active) return null;
+    return (
+        <div className="fixed inset-0 z-[200] pointer-events-none">
+            <div className="absolute inset-0 bg-white opacity-50 animate-flash"></div>
+            <svg className="absolute w-24 h-24 text-yellow-300 animate-lightning" style={{ left: `${position.x - 48}px`, top: `${position.y - 48}px` }}>
+                <path d="M 50,0 L 20,50 L 40,50 L 10,100 L 80,40 L 60,40 Z" stroke="white" strokeWidth="2" fill="currentColor" />
+            </svg>
+        </div>
+    );
+};
+
 const Notification = ({ message, type, onDismiss }) => {
+  useEffect(() => { 
+      if(message) {
+        const timer = setTimeout(onDismiss, 3000); 
+        return () => clearTimeout(timer);
+      }
+  }, [message, onDismiss]);
+
   if (!message) return null;
   const baseClasses = 'fixed top-20 right-5 p-4 rounded-lg shadow-lg text-white z-[130] transition-transform transform';
   const typeClasses = { success: 'bg-green-500', error: 'bg-red-500' };
-  useEffect(() => { const timer = setTimeout(onDismiss, 3000); return () => clearTimeout(timer); }, [message, onDismiss]);
+  
   return <div className={`${baseClasses} ${typeClasses[type]}`}>{message}</div>;
 };
 
@@ -90,8 +153,12 @@ const ImageViewerModal = ({ imageUrl, onClose }) => (
     </div>
 );
 
-const ProductCard = ({ product, onAddToCart, onNavigateToProduct }) => {
+const ProductCard = ({ product, onAddToCart, onNavigateToProduct, triggerThunderEffect }) => {
     const [quantity, setQuantity] = useState(1);
+    const handleAddToCartClick = (e) => {
+        triggerThunderEffect(e);
+        onAddToCart(product, quantity);
+    };
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 flex flex-col">
             <button onClick={() => onNavigateToProduct(product)} className="w-full text-left">
@@ -106,7 +173,7 @@ const ProductCard = ({ product, onAddToCart, onNavigateToProduct }) => {
                     <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{formatPrice(product.price)}</span>
                     <div className="flex items-center justify-between mt-4">
                         <input type="number" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} className="w-16 text-center bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600" />
-                        <button onClick={() => onAddToCart(product, quantity)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full transition-colors duration-300 flex items-center"><ShoppingCart className="w-5 h-5 mr-2"/>Añadir</button>
+                        <button onClick={handleAddToCartClick} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full transition-colors duration-300 flex items-center"><ShoppingCart className="w-5 h-5 mr-2"/>Añadir</button>
                     </div>
                 </div>
             </div>
@@ -133,28 +200,33 @@ const Testimonials = () => (
     </div>
 );
 
-const HomePage = ({ products, onAddToCart, onNavigate, onNavigateToProduct }) => (
+const HomePage = ({ products, onAddToCart, onNavigate, onNavigateToProduct, triggerThunderEffect }) => (
     <div>
         <div className="bg-indigo-600 dark:bg-indigo-900 text-white"><div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center"><h1 className="text-4xl md:text-6xl font-extrabold mb-4">Pide. Parpadea. Recibe. THUNDER.</h1><p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto">Elige lo que quieres. Lo tendrás antes de que termines de leer esto.</p><button onClick={() => onNavigate('products')} className="bg-white text-indigo-600 font-bold py-3 px-8 rounded-full text-lg hover:bg-gray-200 transition-colors duration-300">Ver Productos</button></div></div>
-        <div className="py-16"><div className="container mx-auto px-4 sm:px-6 lg:px-8"><h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-10">Productos Destacados</h2><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{products.slice(0, 3).map(product => <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onNavigateToProduct={onNavigateToProduct} />)}</div></div></div>
+        <div className="py-16"><div className="container mx-auto px-4 sm:px-6 lg:px-8"><h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-10">Productos Destacados</h2><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{products.slice(0, 3).map(product => <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onNavigateToProduct={onNavigateToProduct} triggerThunderEffect={triggerThunderEffect} />)}</div></div></div>
         <Testimonials />
     </div>
 );
 
-const ProductListPage = ({ products, onAddToCart, onNavigateToProduct, selectedCategory }) => {
+const ProductListPage = ({ products, onAddToCart, onNavigateToProduct, selectedCategory, triggerThunderEffect }) => {
     const filteredProducts = selectedCategory ? products.filter(p => p.category === selectedCategory) : products;
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-10 text-center">{selectedCategory || 'Todos los Productos'}</h1>
-            {filteredProducts.length === 0 ? <p className="text-center text-gray-500 dark:text-gray-400">No hay productos en esta categoría.</p> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">{filteredProducts.map(product => <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onNavigateToProduct={onNavigateToProduct} />)}</div>}
+            {filteredProducts.length === 0 ? <p className="text-center text-gray-500 dark:text-gray-400">No hay productos en esta categoría.</p> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">{filteredProducts.map(product => <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onNavigateToProduct={onNavigateToProduct} triggerThunderEffect={triggerThunderEffect} />)}</div>}
         </div>
     );
 };
 
-const ProductDetailPage = ({ product, onAddToCart, onNavigate }) => {
+const ProductDetailPage = ({ product, onAddToCart, onNavigate, triggerThunderEffect }) => {
     const [quantity, setQuantity] = useState(1);
     const [isImageVisible, setIsImageVisible] = useState(false);
     if (!product) return <div className="text-center p-20">Producto no encontrado. <button onClick={() => onNavigate('products')} className="text-indigo-500 underline">Volver a productos</button></div>;
+
+    const handleAddToCartClick = (e) => {
+        triggerThunderEffect(e);
+        onAddToCart(product, quantity);
+    };
 
     return (
         <>
@@ -169,7 +241,7 @@ const ProductDetailPage = ({ product, onAddToCart, onNavigate }) => {
                         <p className="text-gray-700 dark:text-gray-300 mb-8">{product.description}</p>
                         <div className="flex items-center space-x-4">
                             <input type="number" value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} className="w-20 text-center p-3 text-lg bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600" />
-                            <button onClick={() => onAddToCart(product, quantity)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center text-lg"><ShoppingCart className="w-6 h-6 mr-3"/>Añadir al Carrito</button>
+                            <button onClick={handleAddToCartClick} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center text-lg"><ShoppingCart className="w-6 h-6 mr-3"/>Añadir al Carrito</button>
                         </div>
                     </div>
                 </div>
@@ -179,20 +251,25 @@ const ProductDetailPage = ({ product, onAddToCart, onNavigate }) => {
     );
 };
 
-const CartPage = ({ cart, onUpdateQuantity, onRemoveItem, onNavigate }) => {
+const CartPage = ({ cart, onUpdateQuantity, onRemoveItem, onNavigate, triggerThunderEffect }) => {
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const shipping = subtotal > 0 ? 10000.00 : 0;
     const total = subtotal + shipping;
+    
+    const handleCheckoutClick = (e) => {
+        triggerThunderEffect(e);
+        onNavigate('checkout');
+    };
 
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-10">Tu Carrito</h1>
-            {cart.length === 0 ? <div className="text-center bg-white dark:bg-gray-800 p-10 rounded-lg shadow-md"><ShoppingCart className="mx-auto h-16 w-16 text-gray-400" /><p className="mt-4 text-xl text-gray-500 dark:text-gray-400">Tu carrito está vacío.</p><button onClick={() => onNavigate('products')} className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-full transition-colors duration-300">Explorar productos</button></div> : <div className="grid grid-cols-1 lg:grid-cols-3 gap-8"><div className="lg:col-span-2 space-y-4">{cart.map(item => <div key={item.id} className="flex items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md"><img src={item.imageUrl} alt={item.name} className="w-24 h-24 object-cover rounded-md mr-4" /><div className="flex-grow"><h3 className="text-lg font-semibold text-gray-900 dark:text-white">{item.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold">{formatPrice(item.price)}</p></div><div className="flex items-center"><input type="number" value={item.quantity} onChange={(e) => onUpdateQuantity(item.id, parseInt(e.target.value, 10))} min="1" className="w-16 text-center bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600" /><button onClick={() => onRemoveItem(item.id)} className="ml-4 text-red-500 hover:text-red-700"><Trash2 className="w-6 h-6" /></button></div></div>)}</div><div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md h-fit"><h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Resumen del Pedido</h2><div className="space-y-2"><div className="flex justify-between"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="flex justify-between"><span>Envío</span><span>{formatPrice(shipping)}</span></div><hr className="my-2 border-gray-200 dark:border-gray-700"/><div className="flex justify-between font-bold text-lg"><span>Total</span><span>{formatPrice(total)}</span></div></div><button onClick={() => onNavigate('checkout')} className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-colors duration-300">Proceder al Pago</button></div></div>}
+            {cart.length === 0 ? <div className="text-center bg-white dark:bg-gray-800 p-10 rounded-lg shadow-md"><ShoppingCart className="mx-auto h-16 w-16 text-gray-400" /><p className="mt-4 text-xl text-gray-500 dark:text-gray-400">Tu carrito está vacío.</p><button onClick={() => onNavigate('products')} className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-full transition-colors duration-300">Explorar productos</button></div> : <div className="grid grid-cols-1 lg:grid-cols-3 gap-8"><div className="lg:col-span-2 space-y-4">{cart.map(item => <div key={item.id} className="flex items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md"><img src={item.imageUrl} alt={item.name} className="w-24 h-24 object-cover rounded-md mr-4" /><div className="flex-grow"><h3 className="text-lg font-semibold text-gray-900 dark:text-white">{item.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold">{formatPrice(item.price)}</p></div><div className="flex items-center"><input type="number" value={item.quantity} onChange={(e) => onUpdateQuantity(item.id, parseInt(e.target.value, 10))} min="1" className="w-16 text-center bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-300 dark:border-gray-600" /><button onClick={() => onRemoveItem(item.id)} className="ml-4 text-red-500 hover:text-red-700"><Trash2 className="w-6 h-6" /></button></div></div>)}</div><div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md h-fit"><h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Resumen del Pedido</h2><div className="space-y-2"><div className="flex justify-between"><span>Subtotal</span><span>{formatPrice(subtotal)}</span></div><div className="flex justify-between"><span>Envío</span><span>{formatPrice(shipping)}</span></div><hr className="my-2 border-gray-200 dark:border-gray-700"/><div className="flex justify-between font-bold text-lg"><span>Total</span><span>{formatPrice(total)}</span></div></div><button onClick={handleCheckoutClick} className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-colors duration-300">Proceder al Pago</button></div></div>}
         </div>
     );
 };
 
-const CheckoutPage = ({ onPlaceOrder, onNavigate, cart, paymentInfo }) => {
+const CheckoutPage = ({ onPlaceOrder, onNavigate, cart, paymentInfo, triggerThunderEffect }) => {
     const [receiptFile, setReceiptFile] = useState(null);
     const [receiptDataUrl, setReceiptDataUrl] = useState('');
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -219,6 +296,7 @@ const CheckoutPage = ({ onPlaceOrder, onNavigate, cart, paymentInfo }) => {
             alert('Por favor, adjunta el comprobante de pago.');
             return;
         }
+        triggerThunderEffect(e);
         const formData = new FormData(e.target);
         const orderDetails = {
             shippingAddress: { 
@@ -533,6 +611,7 @@ const AdminPage = ({ products, onSaveProduct, onDeleteProduct, paymentInfo, onSa
         </div>
     );
 };
+
 
 // --- Componente Principal de la Aplicación ---
 export default function App() {
