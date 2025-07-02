@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Tienda THUNDER - Pide. Parpadea. Recibe."/>
+    <title>THUNDER</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.1.22/Tone.js"></script>
+  </head>
+  <body>
+    <noscript>Necesitas habilitar JavaScript para correr esta aplicación.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
